@@ -30,6 +30,8 @@ struct TodoApp {
     sort_newest_first: bool,
     editing: Option<usize>,
     editing_input: String,
+    confirm_exit: bool,
+    exit_dialog_opened: bool,
 }
 
 impl Default for TodoApp {
@@ -44,12 +46,19 @@ impl Default for TodoApp {
             sort_newest_first: true,
             editing: None,
             editing_input: String::new(),
+            confirm_exit: false,
+            exit_dialog_opened: false,
         }
     }
 }
 
 impl eframe::App for TodoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let close_requested = ctx.input(|i| i.viewport().close_requested());
+        if close_requested && !self.confirm_exit {
+            self.confirm_exit = true;
+        }
+
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("📝 Todo List");
@@ -220,29 +229,40 @@ impl eframe::App for TodoApp {
                 }
             });
         });
-    }
-
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        let should_export = MessageDialog::new()
-            .set_title("Export on Exit")
-            .set_description("Do you want to export your todos before closing?")
-            .set_buttons(MessageButtons::YesNo)
-            .show();
-
-        if should_export {
-            if let Some(folder) = FileDialog::new().set_title("Select folder to export").pick_folder() {
-                let file_path = folder.join("todo_export.json");
-                match std::fs::write(&file_path, serde_json::to_string_pretty(&self.todos).unwrap()) {
-                    Ok(_) => {
-                        println!("Exported to: {}", file_path.display());
-                    }
-                    Err(err) => {
-                        println!("Export failed: {}", err);
+        if self.confirm_exit {
+            if !self.exit_dialog_opened {
+                self.exit_dialog_opened = true;    
+                let should_export = MessageDialog::new()
+                    .set_title("Export on Exit")
+                    .set_description("Do you want to export your todos before closing?")
+                    .set_buttons(MessageButtons::YesNo)
+                    .show();
+                if should_export {
+                    if let Some(folder) = FileDialog::new().set_title("Select folder to export").pick_folder() {
+                        let file_path = folder.join("todo_export.json");
+                        match std::fs::write(&file_path, serde_json::to_string_pretty(&self.todos).unwrap()) {
+                            Ok(_) => {
+                                MessageDialog::new()
+                                    .set_title("Export Successful")
+                                    .set_description(&format!("Exported to: {}", file_path.display()))
+                                    .set_buttons(MessageButtons::Ok)
+                                    .show();
+                            }
+                            Err(err) => {
+                                MessageDialog::new()
+                                    .set_title("Export Failed")
+                                    .set_description(&format!("Failed to export: {}", err))
+                                    .set_buttons(MessageButtons::Ok)
+                                    .show();
+                            }
+                        }
                     }
                 }
-            }
-        }
+                ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);
+            };
+        };
     }
+
 }
 
 fn load_icon() -> Option<Arc<egui::IconData>> {
